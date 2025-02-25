@@ -1,0 +1,5 @@
+/target
+/dist
+/config.toml
+*.log
+build.sh
