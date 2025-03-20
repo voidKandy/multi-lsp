@@ -266,7 +266,6 @@ where
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).await?;
-        tracing::warn!("read line: {}", line);
         if let Some(content) = line.strip_prefix("Content-Length: ") {
             content_length = content
                 .trim()
@@ -326,8 +325,23 @@ async fn main() -> MainResult<()> {
         }
     }
 
+    let mut _tracing_guard = None;
     if let Some(log_file_path) = lsp_config.log_file.as_ref() {
         let _ = std::fs::File::create(log_file_path).expect("failed to wipe log file");
+        let directory = log_file_path.parent().unwrap();
+        let file_name = log_file_path.file_name().unwrap();
+        let file_appender = tracing_appender::rolling::never(directory, file_name);
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        _tracing_guard = Some(guard);
+
+        let env_filter = EnvFilter::builder()
+            .with_default_directive(LevelFilter::DEBUG.into())
+            .from_env_lossy();
+        tracing_subscriber::fmt()
+            .with_writer(non_blocking)
+            .with_env_filter(env_filter)
+            .init();
+        tracing::warn!("tracing initialized");
     }
 
     if let Some(lang) = cli.language.as_deref() {
@@ -339,7 +353,9 @@ async fn main() -> MainResult<()> {
         }
         return Err(other_err!("No language server found."));
     }
+
     let mut proxy_server = ProxyServer::init(&lsp_config).await?;
+
     proxy_server.main_loop().await;
     Ok(())
 }
